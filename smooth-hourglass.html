@@ -197,60 +197,67 @@
         let currentRows = 40;
         let currentCols = 35;
 
-        // Empirical calibration constants (measured from testing)
-        // With radius=2.5, gravity=0.35, neck=20px:
-        // ~1200 particles flow through in approximately 60 seconds
+        // Empirical calibration constants (measured from physics)
+        // With radius=2.5 (diameter=5px), gravity=0.35, neck=20px, 60 FPS:
+        // Actual flow rate: ~120 particles/second
         const CALIBRATION = {
-            BASE_PARTICLES: 1200,   // Number of particles for base time
-            BASE_FLOW_TIME: 60,     // Base time in seconds
-            PARTICLES_PER_SECOND: 20, // Empirical flow rate through neck
+            BASE_RADIUS: 2.5,           // Base particle radius in pixels
+            BASE_DIAMETER: 5.0,         // Base particle diameter
+            BASE_FLOW_RATE: 120,        // Particles per second at base radius
+            NECK_WIDTH: 20,             // Hourglass neck width
+            MAX_PARTICLES: 2800,        // Maximum particles we can fit
+            MIN_RADIUS: 1.5,            // Minimum particle radius
+            MAX_RADIUS: 4.5,            // Maximum particle radius
         };
 
         /**
          * Calculate optimal particle parameters based on timer duration
-         * Returns: { radius, rows, cols, totalParticles }
+         * Flow rate scales with (diameter)^-2 (smaller particles = faster flow)
+         * Returns: { radius, rows, cols, estimatedParticles, estimatedFlowRate }
          */
         function calculateParticleParams(timerSeconds) {
-            // Strategy: Adjust particle count to match timer duration
-            // Keep physics constant for realistic simulation
+            // Strategy:
+            // 1. Pack as many particles as possible in chamber
+            // 2. Adjust particle SIZE to control flow rate
+            // 3. Flow rate ∝ (neck_width / particle_diameter)²
 
-            // Target number of particles based on flow rate
-            const targetParticles = CALIBRATION.PARTICLES_PER_SECOND * timerSeconds;
+            // Calculate required flow rate for this timer duration
+            // Use maximum particles we can fit
+            const maxParticles = CALIBRATION.MAX_PARTICLES;
+            const requiredFlowRate = maxParticles / timerSeconds; // particles per second needed
 
-            // Clamp to reasonable limits
-            const clampedParticles = Math.max(300, Math.min(3000, targetParticles));
+            // Calculate radius needed to achieve this flow rate
+            // Flow rate ratio = (base_diameter / new_diameter)²
+            // new_diameter = base_diameter × sqrt(BASE_FLOW_RATE / requiredFlowRate)
+            const flowRatio = CALIBRATION.BASE_FLOW_RATE / requiredFlowRate;
+            const diameterMultiplier = Math.sqrt(flowRatio);
+            const newDiameter = CALIBRATION.BASE_DIAMETER * diameterMultiplier;
+            const newRadius = newDiameter / 2;
 
-            // Adjust particle size based on duration
-            let radius;
-            if (timerSeconds < 30) {
-                // Short timers: smaller particles (faster flow per particle)
-                radius = 2.0;
-            } else if (timerSeconds < 180) {
-                // Medium timers: standard particles
-                radius = 2.5;
-            } else if (timerSeconds < 600) {
-                // Long timers: slightly larger particles
-                radius = 2.8;
-            } else {
-                // Very long timers: larger particles (slower flow)
-                radius = 3.2;
-            }
+            // Clamp radius to reasonable limits
+            const radius = Math.max(CALIBRATION.MIN_RADIUS, Math.min(CALIBRATION.MAX_RADIUS, newRadius));
+            const actualDiameter = radius * 2;
 
-            // Calculate grid dimensions to achieve target particle count
-            // Account for triangular chamber shape (fill factor ~0.65)
+            // Calculate actual flow rate with this radius
+            const actualFlowRate = CALIBRATION.BASE_FLOW_RATE * Math.pow(CALIBRATION.BASE_DIAMETER / actualDiameter, 2);
+
+            // Calculate grid dimensions to pack maximum particles
+            // Fill factor accounts for cone shape
             const fillFactor = 0.65;
-            const gridCells = clampedParticles / fillFactor;
+            const gridCells = maxParticles / fillFactor;
 
             // Prefer more rows than cols for vertical chamber
-            const aspectRatio = 1.2; // rows/cols ratio
+            const aspectRatio = 1.15;
             const cols = Math.round(Math.sqrt(gridCells / aspectRatio));
             const rows = Math.round(cols * aspectRatio);
 
             return {
                 radius: radius,
-                rows: Math.max(20, Math.min(60, rows)),
-                cols: Math.max(15, Math.min(50, cols)),
-                targetParticles: clampedParticles
+                rows: Math.max(25, Math.min(70, rows)),
+                cols: Math.max(20, Math.min(60, cols)),
+                estimatedParticles: Math.round(rows * cols * fillFactor),
+                estimatedFlowRate: actualFlowRate,
+                estimatedDuration: Math.round(maxParticles / actualFlowRate)
             };
         }
 
@@ -600,7 +607,7 @@
             // Calculate target flow rate: all particles should pass through in totalSeconds
             targetFlowRate = particlesInTop / totalSeconds; // particles per second
 
-            status.textContent = `${particles.length} grains (${params.radius.toFixed(1)}px) - ${totalSeconds}s timer`;
+            status.textContent = `${particles.length} grains (r=${params.radius.toFixed(1)}px, ~${params.estimatedDuration}s flow) for ${totalSeconds}s timer`;
         }
 
         function startTimer() {
