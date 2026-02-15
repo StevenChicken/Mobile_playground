@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hourglass Countdown Timer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2em;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        input[type="number"] {
+            width: 80px;
+            padding: 12px;
+            font-size: 1.2em;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #764ba2;
+        }
+
+        label {
+            font-weight: bold;
+            color: #555;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1em;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin: 5px;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .countdown-display {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin: 30px 0;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .hourglass-container {
+            position: relative;
+            width: 200px;
+            height: 300px;
+            margin: 0 auto;
+            perspective: 1000px;
+        }
+
+        .hourglass {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            transition: transform 0.8s ease-in-out;
+        }
+
+        .hourglass.flip {
+            animation: flip 1s ease-in-out;
+        }
+
+        @keyframes flip {
+            0% {
+                transform: rotateZ(0deg);
+            }
+            100% {
+                transform: rotateZ(180deg);
+            }
+        }
+
+        .hourglass-frame {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .glass-top, .glass-bottom {
+            width: 120px;
+            height: 130px;
+            position: relative;
+            background: rgba(200, 230, 255, 0.3);
+            border: 3px solid #333;
+        }
+
+        .glass-top {
+            border-radius: 60px 60px 0 0;
+            clip-path: polygon(20% 0%, 80% 0%, 50% 100%);
+            border-bottom: none;
+        }
+
+        .glass-bottom {
+            border-radius: 0 0 60px 60px;
+            clip-path: polygon(50% 0%, 20% 100%, 80% 100%);
+            border-top: none;
+        }
+
+        .glass-middle {
+            width: 40px;
+            height: 20px;
+            background: #333;
+            position: relative;
+            z-index: 10;
+        }
+
+        .sand-container-top {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            clip-path: polygon(20% 0%, 80% 0%, 50% 100%);
+        }
+
+        .sand-top {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            background: linear-gradient(180deg, #f4a460 0%, #d2691e 100%);
+            transition: height 0.5s linear;
+            border-radius: 0 0 5px 5px;
+        }
+
+        .sand-container-bottom {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            clip-path: polygon(50% 0%, 20% 100%, 80% 100%);
+        }
+
+        .sand-bottom {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            background: linear-gradient(180deg, #f4a460 0%, #d2691e 100%);
+            transition: height 0.5s linear;
+            border-radius: 5px 5px 0 0;
+        }
+
+        .sand-stream {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 2px;
+            height: 0;
+            background: linear-gradient(180deg, #f4a460 0%, #d2691e 100%);
+            opacity: 0;
+            z-index: 5;
+        }
+
+        .sand-stream.active {
+            opacity: 1;
+            height: 20px;
+            animation: flow 0.3s linear infinite;
+        }
+
+        @keyframes flow {
+            0%, 100% {
+                opacity: 0.6;
+                width: 2px;
+            }
+            50% {
+                opacity: 1;
+                width: 3px;
+            }
+        }
+
+        .status {
+            margin-top: 20px;
+            font-size: 1.2em;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .complete-message {
+            font-size: 1.5em;
+            color: #28a745;
+            font-weight: bold;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⏳ Hourglass Timer</h1>
+
+        <div class="input-section" id="inputSection">
+            <div class="input-group">
+                <label for="hours">Hours:</label>
+                <input type="number" id="hours" min="0" max="23" value="0">
+
+                <label for="minutes">Minutes:</label>
+                <input type="number" id="minutes" min="0" max="59" value="1">
+
+                <label for="seconds">Seconds:</label>
+                <input type="number" id="seconds" min="0" max="59" value="0">
+            </div>
+            <button id="startBtn">Start Timer</button>
+        </div>
+
+        <div class="countdown-display" id="countdown">00:00:00</div>
+
+        <div class="hourglass-container">
+            <div class="hourglass" id="hourglass">
+                <div class="hourglass-frame">
+                    <div class="glass-top">
+                        <div class="sand-container-top">
+                            <div class="sand-top" id="sandTop"></div>
+                        </div>
+                    </div>
+                    <div class="glass-middle">
+                        <div class="sand-stream" id="sandStream"></div>
+                    </div>
+                    <div class="glass-bottom">
+                        <div class="sand-container-bottom">
+                            <div class="sand-bottom" id="sandBottom"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status" id="status">Set your time and start!</div>
+
+        <div class="hidden" id="controls">
+            <button id="pauseBtn">Pause</button>
+            <button id="resetBtn">Reset</button>
+        </div>
+    </div>
+
+    <script>
+        let totalSeconds = 0;
+        let remainingSeconds = 0;
+        let timerInterval = null;
+        let isPaused = false;
+        let flipTimeout = null;
+
+        const hoursInput = document.getElementById('hours');
+        const minutesInput = document.getElementById('minutes');
+        const secondsInput = document.getElementById('seconds');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const countdownDisplay = document.getElementById('countdown');
+        const inputSection = document.getElementById('inputSection');
+        const controls = document.getElementById('controls');
+        const status = document.getElementById('status');
+        const hourglass = document.getElementById('hourglass');
+        const sandTop = document.getElementById('sandTop');
+        const sandBottom = document.getElementById('sandBottom');
+        const sandStream = document.getElementById('sandStream');
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function updateSandLevels() {
+            if (totalSeconds === 0) return;
+
+            const progress = remainingSeconds / totalSeconds;
+            const topHeight = Math.max(0, Math.min(100, progress * 100));
+            const bottomHeight = Math.max(0, Math.min(100, (1 - progress) * 100));
+
+            sandTop.style.height = topHeight + '%';
+            sandBottom.style.height = bottomHeight + '%';
+        }
+
+        function flipHourglass() {
+            hourglass.classList.add('flip');
+            sandStream.classList.remove('active');
+
+            setTimeout(() => {
+                hourglass.classList.remove('flip');
+                const tempTop = sandTop.style.height;
+                sandTop.style.height = sandBottom.style.height;
+                sandBottom.style.height = tempTop;
+
+                if (!isPaused && remainingSeconds > 0) {
+                    sandStream.classList.add('active');
+                }
+            }, 1000);
+        }
+
+        function startTimer() {
+            const hours = parseInt(hoursInput.value) || 0;
+            const minutes = parseInt(minutesInput.value) || 0;
+            const seconds = parseInt(secondsInput.value) || 0;
+
+            totalSeconds = hours * 3600 + minutes * 60 + seconds;
+
+            if (totalSeconds <= 0) {
+                alert('Please enter a valid time!');
+                return;
+            }
+
+            remainingSeconds = totalSeconds;
+            isPaused = false;
+
+            inputSection.classList.add('hidden');
+            controls.classList.remove('hidden');
+            status.textContent = 'Timer running...';
+            status.classList.remove('complete-message');
+
+            sandTop.style.height = '100%';
+            sandBottom.style.height = '0%';
+            sandStream.classList.add('active');
+
+            updateDisplay();
+
+            timerInterval = setInterval(() => {
+                if (!isPaused && remainingSeconds > 0) {
+                    remainingSeconds--;
+                    updateDisplay();
+                    updateSandLevels();
+
+                    if (remainingSeconds === 0) {
+                        completeTimer();
+                    }
+                }
+            }, 1000);
+
+            const flipInterval = Math.min(totalSeconds * 1000, 60000);
+            if (totalSeconds > 60) {
+                flipTimeout = setInterval(() => {
+                    if (!isPaused && remainingSeconds > 0) {
+                        flipHourglass();
+                    }
+                }, flipInterval);
+            }
+        }
+
+        function pauseTimer() {
+            isPaused = !isPaused;
+            pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+            status.textContent = isPaused ? 'Timer paused' : 'Timer running...';
+
+            if (isPaused) {
+                sandStream.classList.remove('active');
+            } else {
+                sandStream.classList.add('active');
+            }
+        }
+
+        function resetTimer() {
+            clearInterval(timerInterval);
+            clearInterval(flipTimeout);
+            timerInterval = null;
+            flipTimeout = null;
+            isPaused = false;
+            remainingSeconds = 0;
+            totalSeconds = 0;
+
+            inputSection.classList.remove('hidden');
+            controls.classList.add('hidden');
+            countdownDisplay.textContent = '00:00:00';
+            status.textContent = 'Set your time and start!';
+            status.classList.remove('complete-message');
+            pauseBtn.textContent = 'Pause';
+
+            sandTop.style.height = '0%';
+            sandBottom.style.height = '0%';
+            sandStream.classList.remove('active');
+            hourglass.classList.remove('flip');
+        }
+
+        function completeTimer() {
+            clearInterval(timerInterval);
+            clearInterval(flipTimeout);
+            sandStream.classList.remove('active');
+            status.textContent = '✓ Time\'s up!';
+            status.classList.add('complete-message');
+
+            const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZTA4QWq/m7K5aFgxLpOLwwW8dBDWN1fPPfC0GKXzJ8N+TTAkSYrjq7aVSEwlHouLxt3AeBjSN1fPQfS4HKn7K8OCRSwoTZLnq7qVTFQlIpOPxtHEfBjaP1/PRfS8HK3/L8OKSTAS0');
+            audio.play().catch(() => {});
+        }
+
+        function updateDisplay() {
+            countdownDisplay.textContent = formatTime(remainingSeconds);
+        }
+
+        startBtn.addEventListener('click', startTimer);
+        pauseBtn.addEventListener('click', pauseTimer);
+        resetBtn.addEventListener('click', resetTimer);
+
+        hoursInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startTimer();
+        });
+        minutesInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startTimer();
+        });
+        secondsInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startTimer();
+        });
+    </script>
+</body>
+</html>
