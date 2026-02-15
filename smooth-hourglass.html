@@ -169,7 +169,7 @@
             RADIUS_VARIANCE: 0.6,
             DAMPING: 0.992,
             BOUNCE: 0.25,
-            FRICTION: 0.85, // Wall friction
+            FRICTION: 0.97, // Wall friction (minimal slowdown)
             MAX_PARTICLES: 3000,
         };
 
@@ -190,6 +190,9 @@
         let timerInterval = null;
         let isPaused = false;
         let animationFrameId = null;
+        let particlesInTop = 0;
+        let particlesPassed = 0;
+        let targetFlowRate = 0; // particles per second
 
         const hoursInput = document.getElementById('hours');
         const minutesInput = document.getElementById('minutes');
@@ -209,6 +212,7 @@
                 this.vx = (Math.random() - 0.5) * 0.5;
                 this.vy = 0;
                 this.radius = PHYSICS.PARTICLE_RADIUS + (Math.random() - 0.5) * PHYSICS.RADIUS_VARIANCE;
+                this.inTopChamber = (y < HOURGLASS.neckY);
 
                 // Beautiful golden sand colors
                 const hue = 35 + Math.random() * 15; // Golden to amber
@@ -459,6 +463,33 @@
             // Draw frame
             drawHourglassFrame();
 
+            // Track particles passing through neck
+            particles.forEach(p => {
+                const wasInTop = p.inTopChamber;
+                p.inTopChamber = (p.y < HOURGLASS.neckY);
+
+                // Particle just passed through the neck
+                if (wasInTop && !p.inTopChamber) {
+                    particlesPassed++;
+                }
+            });
+
+            // Calculate expected progress vs actual progress
+            if (totalSeconds > 0 && remainingSeconds > 0 && !isPaused) {
+                const timeElapsed = totalSeconds - remainingSeconds;
+                const expectedPassed = targetFlowRate * timeElapsed;
+                const progressRatio = particlesPassed / Math.max(1, expectedPassed);
+
+                // Adjust gravity dynamically to sync with countdown
+                // If too fast (progressRatio > 1), reduce gravity
+                // If too slow (progressRatio < 1), increase gravity
+                if (progressRatio > 1.1) {
+                    PHYSICS.GRAVITY = Math.max(0.15, PHYSICS.GRAVITY * 0.98);
+                } else if (progressRatio < 0.9) {
+                    PHYSICS.GRAVITY = Math.min(0.6, PHYSICS.GRAVITY * 1.02);
+                }
+            }
+
             // Update particles
             particles.forEach(p => p.update());
 
@@ -485,6 +516,7 @@
         function fillTopChamber() {
             // Fill the top chamber with particles
             particles = [];
+            particlesPassed = 0;
             const chamberHeight = HOURGLASS.neckY - HOURGLASS.topY - 20;
             const cols = 35; // Number of columns
             const rows = 40; // Number of rows
@@ -508,10 +540,15 @@
                         const particle = new Particle(x, y);
                         particle.vx = 0;
                         particle.vy = 0;
+                        particle.inTopChamber = true; // Track which chamber
                         particles.push(particle);
                     }
                 }
             }
+
+            particlesInTop = particles.length;
+            // Calculate target flow rate: all particles should pass through in totalSeconds
+            targetFlowRate = particlesInTop / totalSeconds; // particles per second
 
             status.textContent = `${particles.length} sand grains ready to flow!`;
         }
@@ -572,6 +609,9 @@
             remainingSeconds = 0;
             totalSeconds = 0;
             particles = [];
+            particlesInTop = 0;
+            particlesPassed = 0;
+            PHYSICS.GRAVITY = 0.35; // Reset gravity to default
 
             inputSection.classList.remove('hidden');
             controls.classList.add('hidden');
