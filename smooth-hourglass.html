@@ -165,12 +165,12 @@
         // Optimized physics settings
         const PHYSICS = {
             GRAVITY: 0.35,
-            PARTICLE_RADIUS: 2.5,
-            RADIUS_VARIANCE: 0.6,
-            DAMPING: 0.992,
-            BOUNCE: 0.25,
-            FRICTION: 0.97, // Wall friction (minimal slowdown)
-            MAX_PARTICLES: 3000,
+            PARTICLE_RADIUS: 2.0,      // Smaller grains
+            RADIUS_VARIANCE: 0.3,       // Less variance for uniform packing
+            DAMPING: 0.995,             // Smoother motion
+            BOUNCE: 0.15,               // Less bouncy for smoother flow
+            FRICTION: 0.98,             // Minimal wall friction
+            MAX_PARTICLES: 5000,        // More particles possible with smaller size
         };
 
         // Hourglass geometry
@@ -199,17 +199,17 @@
         let currentNeckWidth = 20; // Dynamic neck width
 
         // Empirical calibration constants (measured from physics)
-        // With radius=2.5 (diameter=5px), gravity=0.35, neck=20px, 60 FPS:
-        // Actual flow rate: ~120 particles/second
+        // With radius=2.0 (diameter=4px), gravity=0.35, neck=20px, 60 FPS:
+        // Smaller particles = faster flow rate: ~150-180 particles/second
         const CALIBRATION = {
-            BASE_RADIUS: 2.5,           // Base particle radius in pixels
-            BASE_DIAMETER: 5.0,         // Base particle diameter
-            BASE_FLOW_RATE: 120,        // Particles per second at base settings
+            BASE_RADIUS: 2.0,           // Base particle radius in pixels (smaller grains)
+            BASE_DIAMETER: 4.0,         // Base particle diameter
+            BASE_FLOW_RATE: 150,        // Particles per second at base settings (smaller = faster)
             BASE_NECK_WIDTH: 20,        // Base hourglass neck width
-            MAX_PARTICLES: 2800,        // Maximum particles we can fit
-            MIN_RADIUS: 1.5,            // Minimum particle radius
-            MAX_RADIUS: 4.5,            // Maximum particle radius
-            MIN_NECK_WIDTH: 12,         // Minimum neck width (for slow flow)
+            MAX_PARTICLES: 4500,        // More particles fit with smaller size
+            MIN_RADIUS: 1.2,            // Minimum particle radius (smaller)
+            MAX_RADIUS: 3.5,            // Maximum particle radius (smaller)
+            MIN_NECK_WIDTH: 10,         // Minimum neck width (narrower for slow flow)
             MAX_NECK_WIDTH: 35,         // Maximum neck width (for fast flow)
         };
 
@@ -225,8 +225,8 @@
             // 3. Flow rate = BASE_FLOW × (neck/BASE_NECK)² × (BASE_DIA/dia)²
             // 4. Prefer adjusting particle size first, then neck if needed
 
-            const fillFactor = 0.65;
-            const aspectRatio = 1.15;
+            const fillFactor = 0.75; // Higher fill factor with tighter packing
+            const aspectRatio = 1.2; // Slightly more vertical
 
             // Calculate grid dimensions for max particles
             let targetParticles = CALIBRATION.MAX_PARTICLES;
@@ -586,9 +586,11 @@
             // Update particles
             particles.forEach(p => p.update());
 
-            // Simple collision detection (optimized - only check nearby)
+            // Optimized collision detection - only check nearby particles
+            // With more particles, reduce collision checks for performance
+            const maxChecks = Math.min(6, Math.ceil(particles.length / 500));
             for (let i = 0; i < particles.length; i++) {
-                for (let j = i + 1; j < Math.min(i + 8, particles.length); j++) {
+                for (let j = i + 1; j < Math.min(i + maxChecks, particles.length); j++) {
                     particles[i].checkCollision(particles[j]);
                 }
             }
@@ -629,11 +631,11 @@
                     const t = relY / chamberHeight;
                     const currentWidth = HOURGLASS.topWidth - (HOURGLASS.topWidth - HOURGLASS.neckWidth) * t;
 
-                    // Hexagonal packing for realistic sand arrangement
-                    const offset = (row % 2) * (currentParticleRadius * 2);
-                    const spacing = currentParticleRadius * 2.2;
+                    // Tight hexagonal packing - no gaps between grains
+                    const offset = (row % 2) * currentParticleRadius;
+                    const spacing = currentParticleRadius * 2.0; // Exactly touching
                     const x = HOURGLASS.centerX - (currentWidth / 2) + offset + (col * spacing);
-                    const y = HOURGLASS.topY + 10 + (row * spacing);
+                    const y = HOURGLASS.topY + 10 + (row * spacing * 0.87); // 0.87 for hex packing
 
                     // Only add if within bounds
                     if (x > HOURGLASS.centerX - currentWidth / 2 + currentParticleRadius &&
