@@ -118,12 +118,15 @@
         }
 
         .hourglass.flip {
-            animation: flip 1s ease-in-out;
+            animation: flip 1.5s ease-in-out;
         }
 
         @keyframes flip {
             0% {
                 transform: rotateZ(0deg);
+            }
+            50% {
+                transform: rotateZ(180deg) scale(1.1);
             }
             100% {
                 transform: rotateZ(180deg);
@@ -217,27 +220,35 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 2px;
+            width: 3px;
             height: 0;
             background: linear-gradient(180deg, #f4a460 0%, #d2691e 100%);
             opacity: 0;
             z-index: 5;
+            box-shadow: 0 0 5px rgba(244, 164, 96, 0.8);
         }
 
         .sand-stream.active {
             opacity: 1;
-            height: 20px;
-            animation: flow 0.3s linear infinite;
+            height: 25px;
+            animation: flow 0.4s ease-in-out infinite;
         }
 
         @keyframes flow {
-            0%, 100% {
-                opacity: 0.6;
+            0% {
+                opacity: 0.4;
                 width: 2px;
+                transform: translate(-50%, -50%) scaleY(0.8);
             }
             50% {
                 opacity: 1;
-                width: 3px;
+                width: 4px;
+                transform: translate(-50%, -50%) scaleY(1);
+            }
+            100% {
+                opacity: 0.4;
+                width: 2px;
+                transform: translate(-50%, -50%) scaleY(0.8);
             }
         }
 
@@ -363,14 +374,18 @@
 
             setTimeout(() => {
                 hourglass.classList.remove('flip');
+                // Swap sand levels
                 const tempTop = sandTop.style.height;
                 sandTop.style.height = sandBottom.style.height;
                 sandBottom.style.height = tempTop;
 
+                // Resume sand flow
                 if (!isPaused && remainingSeconds > 0) {
-                    sandStream.classList.add('active');
+                    setTimeout(() => {
+                        sandStream.classList.add('active');
+                    }, 300);
                 }
-            }, 1000);
+            }, 1500);
         }
 
         function startTimer() {
@@ -411,13 +426,21 @@
                 }
             }, 1000);
 
-            const flipInterval = Math.min(totalSeconds * 1000, 60000);
+            // Flip hourglass every 30 seconds for timers longer than 1 minute
             if (totalSeconds > 60) {
+                const flipInterval = Math.min(totalSeconds * 500, 30000); // Flip every 30 seconds max
                 flipTimeout = setInterval(() => {
                     if (!isPaused && remainingSeconds > 0) {
                         flipHourglass();
                     }
                 }, flipInterval);
+            } else if (totalSeconds > 30) {
+                // For timers between 30-60 seconds, flip once at halfway point
+                flipTimeout = setTimeout(() => {
+                    if (!isPaused && remainingSeconds > 0) {
+                        flipHourglass();
+                    }
+                }, totalSeconds * 500);
             }
         }
 
