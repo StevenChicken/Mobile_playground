@@ -196,6 +196,7 @@
         let currentParticleRadius = 2.5; // Dynamic particle radius
         let currentRows = 40;
         let currentCols = 35;
+        let currentNeckWidth = 20; // Dynamic neck width
 
         // Empirical calibration constants (measured from physics)
         // With radius=2.5 (diameter=5px), gravity=0.35, neck=20px, 60 FPS:
@@ -203,26 +204,27 @@
         const CALIBRATION = {
             BASE_RADIUS: 2.5,           // Base particle radius in pixels
             BASE_DIAMETER: 5.0,         // Base particle diameter
-            BASE_FLOW_RATE: 120,        // Particles per second at base radius
-            NECK_WIDTH: 20,             // Hourglass neck width
+            BASE_FLOW_RATE: 120,        // Particles per second at base settings
+            BASE_NECK_WIDTH: 20,        // Base hourglass neck width
             MAX_PARTICLES: 2800,        // Maximum particles we can fit
             MIN_RADIUS: 1.5,            // Minimum particle radius
             MAX_RADIUS: 4.5,            // Maximum particle radius
+            MIN_NECK_WIDTH: 12,         // Minimum neck width (for slow flow)
+            MAX_NECK_WIDTH: 35,         // Maximum neck width (for fast flow)
         };
 
         /**
          * Calculate optimal particle parameters based on timer duration
-         * Flow rate scales with (diameter)^-2 (smaller particles = faster flow)
-         * Returns: { radius, rows, cols, estimatedParticles, estimatedFlowRate }
+         * Flow rate ∝ (neck_width)² × (particle_diameter)^-2
+         * Returns: { radius, neckWidth, rows, cols, estimatedParticles, estimatedFlowRate }
          */
         function calculateParticleParams(timerSeconds) {
             // Strategy:
             // 1. Pack as many particles as possible in chamber
-            // 2. Adjust particle SIZE to control flow rate
-            // 3. Flow rate ∝ (neck_width / particle_diameter)²
-            // 4. Iterate to account for grid clamping
+            // 2. Adjust BOTH particle size AND neck width to control flow rate
+            // 3. Flow rate = BASE_FLOW × (neck/BASE_NECK)² × (BASE_DIA/dia)²
+            // 4. Prefer adjusting particle size first, then neck if needed
 
-            // First estimate: assume we can fit MAX_PARTICLES
             const fillFactor = 0.65;
             const aspectRatio = 1.15;
 
@@ -237,26 +239,60 @@
             // Actual particles we can fit after clamping
             const actualMaxParticles = Math.round(clampedRows * clampedCols * fillFactor);
 
-            // NOW calculate required flow rate using actual particle count
+            // Required flow rate using actual particle count
             const requiredFlowRate = actualMaxParticles / timerSeconds;
 
-            // Calculate radius needed to achieve this flow rate
-            // Flow rate ratio = (base_diameter / new_diameter)²
-            // new_diameter = base_diameter × sqrt(BASE_FLOW_RATE / requiredFlowRate)
-            const flowRatio = CALIBRATION.BASE_FLOW_RATE / requiredFlowRate;
-            const diameterMultiplier = Math.sqrt(flowRatio);
-            const newDiameter = CALIBRATION.BASE_DIAMETER * diameterMultiplier;
-            const newRadius = newDiameter / 2;
+            // Calculate combined scaling factor needed
+            const flowScaleFactor = requiredFlowRate / CALIBRATION.BASE_FLOW_RATE;
 
-            // Clamp radius to reasonable limits
-            const radius = Math.max(CALIBRATION.MIN_RADIUS, Math.min(CALIBRATION.MAX_RADIUS, newRadius));
+            // Flow = BASE × (neck/BASE_NECK)² × (BASE_DIA/dia)²
+            // flowScaleFactor = (neck/BASE_NECK)² × (BASE_DIA/dia)²
+
+            // Strategy: Try to achieve target with particle size first
+            // Then adjust neck width if particle size is clamped
+
+            // Start with base neck width
+            let neckWidth = CALIBRATION.BASE_NECK_WIDTH;
+            let radius = CALIBRATION.BASE_RADIUS;
+
+            // Calculate required diameter scaling
+            // (BASE_DIA/dia)² = flowScaleFactor / (neck/BASE_NECK)²
+            // With base neck: (BASE_DIA/dia)² = flowScaleFactor
+            let diameterScale = 1.0 / Math.sqrt(flowScaleFactor);
+            let targetDiameter = CALIBRATION.BASE_DIAMETER * diameterScale;
+            let targetRadius = targetDiameter / 2;
+
+            // Check if radius is within bounds
+            if (targetRadius < CALIBRATION.MIN_RADIUS) {
+                // Need faster flow, but hit min radius
+                // Widen the neck to compensate
+                radius = CALIBRATION.MIN_RADIUS;
+                const radiusContribution = Math.pow(CALIBRATION.BASE_DIAMETER / (radius * 2), 2);
+                const neckScaleNeeded = Math.sqrt(flowScaleFactor / radiusContribution);
+                neckWidth = CALIBRATION.BASE_NECK_WIDTH * neckScaleNeeded;
+                neckWidth = Math.min(CALIBRATION.MAX_NECK_WIDTH, neckWidth);
+            } else if (targetRadius > CALIBRATION.MAX_RADIUS) {
+                // Need slower flow, but hit max radius
+                // Narrow the neck to compensate
+                radius = CALIBRATION.MAX_RADIUS;
+                const radiusContribution = Math.pow(CALIBRATION.BASE_DIAMETER / (radius * 2), 2);
+                const neckScaleNeeded = Math.sqrt(flowScaleFactor / radiusContribution);
+                neckWidth = CALIBRATION.BASE_NECK_WIDTH * neckScaleNeeded;
+                neckWidth = Math.max(CALIBRATION.MIN_NECK_WIDTH, neckWidth);
+            } else {
+                // Radius is fine, use it
+                radius = targetRadius;
+            }
+
+            // Calculate actual flow rate with final radius and neck width
             const actualDiameter = radius * 2;
-
-            // Calculate actual flow rate with this radius
-            const actualFlowRate = CALIBRATION.BASE_FLOW_RATE * Math.pow(CALIBRATION.BASE_DIAMETER / actualDiameter, 2);
+            const neckScale = Math.pow(neckWidth / CALIBRATION.BASE_NECK_WIDTH, 2);
+            const diameterScaleActual = Math.pow(CALIBRATION.BASE_DIAMETER / actualDiameter, 2);
+            const actualFlowRate = CALIBRATION.BASE_FLOW_RATE * neckScale * diameterScaleActual;
 
             return {
                 radius: radius,
+                neckWidth: neckWidth,
                 rows: clampedRows,
                 cols: clampedCols,
                 estimatedParticles: actualMaxParticles,
@@ -574,8 +610,12 @@
             // Calculate optimal particle parameters for timer duration
             const params = calculateParticleParams(totalSeconds);
             currentParticleRadius = params.radius;
+            currentNeckWidth = params.neckWidth;
             currentRows = params.rows;
             currentCols = params.cols;
+
+            // Update hourglass geometry with new neck width
+            HOURGLASS.neckWidth = currentNeckWidth;
 
             // Fill the top chamber with particles
             particles = [];
@@ -611,7 +651,7 @@
             // Calculate target flow rate: all particles should pass through in totalSeconds
             targetFlowRate = particlesInTop / totalSeconds; // particles per second
 
-            status.textContent = `${particles.length} grains (r=${params.radius.toFixed(1)}px, ~${params.estimatedDuration}s flow) for ${totalSeconds}s timer`;
+            status.textContent = `${particles.length} grains (r=${params.radius.toFixed(1)}px, neck=${params.neckWidth.toFixed(0)}px) → ${params.estimatedDuration}s for ${totalSeconds}s timer`;
         }
 
         function startTimer() {
@@ -673,6 +713,7 @@
             particlesInTop = 0;
             particlesPassed = 0;
             PHYSICS.GRAVITY = 0.35; // Reset gravity to default
+            HOURGLASS.neckWidth = CALIBRATION.BASE_NECK_WIDTH; // Reset neck width
 
             inputSection.classList.remove('hidden');
             controls.classList.add('hidden');
