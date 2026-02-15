@@ -251,13 +251,17 @@
             const cols = Math.round(Math.sqrt(gridCells / aspectRatio));
             const rows = Math.round(cols * aspectRatio);
 
+            const clampedRows = Math.max(25, Math.min(70, rows));
+            const clampedCols = Math.max(20, Math.min(60, cols));
+            const estimatedParticles = Math.round(clampedRows * clampedCols * fillFactor);
+
             return {
                 radius: radius,
-                rows: Math.max(25, Math.min(70, rows)),
-                cols: Math.max(20, Math.min(60, cols)),
-                estimatedParticles: Math.round(rows * cols * fillFactor),
+                rows: clampedRows,
+                cols: clampedCols,
+                estimatedParticles: estimatedParticles,
                 estimatedFlowRate: actualFlowRate,
-                estimatedDuration: Math.round(maxParticles / actualFlowRate)
+                estimatedDuration: Math.round(estimatedParticles / actualFlowRate)
             };
         }
 
