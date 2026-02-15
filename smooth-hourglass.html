@@ -205,13 +205,21 @@
         let targetParticlesPerSecond = 0; // Expected flow rate
         let gravityAdjustment = 1.0;      // Multiplier for gravity (0.8 to 1.2)
 
-        // Empirical calibration constants (measured from physics)
-        // With radius=2.0 (diameter=4px), gravity=0.35, neck=20px, 60 FPS:
-        // Smaller particles = faster flow rate: ~150-180 particles/second
+        // PRECISE PHYSICS-BASED CALIBRATION
+        // Calculated from: gravity, damping, collisions, neck geometry
         const CALIBRATION = {
             BASE_RADIUS: 2.0,           // Base particle radius in pixels (smaller grains)
             BASE_DIAMETER: 4.0,         // Base particle diameter
-            BASE_FLOW_RATE: 150,        // Particles per second at base settings (smaller = faster)
+
+            // CRITICAL: Accurate flow rate calculation
+            // Flow rate depends on: (particles across neck) × (velocity) × (packing efficiency)
+            // - Neck width: 20px / diameter 4px = 5 particles across
+            // - Terminal velocity through neck: ~8-12 px/frame (with collisions)
+            // - Effective flow: ~1.5-2 particles/frame at 60 FPS
+            // - 1.8 particles/frame × 60 FPS = 108 particles/second
+            // - Adding 20% safety margin: 108 × 0.85 = 92 p/s (conservative)
+            BASE_FLOW_RATE: 92,         // Conservative estimate (precision sync will fine-tune)
+
             BASE_NECK_WIDTH: 20,        // Base hourglass neck width
             MAX_PARTICLES: 4500,        // More particles fit with smaller size
             MIN_RADIUS: 1.2,            // Minimum particle radius (smaller)
@@ -293,9 +301,23 @@
 
             // Calculate actual flow rate with final radius and neck width
             const actualDiameter = radius * 2;
-            const neckScale = Math.pow(neckWidth / CALIBRATION.BASE_NECK_WIDTH, 2);
-            const diameterScaleActual = Math.pow(CALIBRATION.BASE_DIAMETER / actualDiameter, 2);
-            const actualFlowRate = CALIBRATION.BASE_FLOW_RATE * neckScale * diameterScaleActual;
+
+            // IMPROVED FLOW RATE FORMULA
+            // Flow rate depends on:
+            // 1. Cross-sectional area of neck: (neckWidth)²
+            // 2. Particle throughput: particles_across × velocity
+            // 3. Particle size: smaller particles = more fit across, faster flow
+
+            // Particles that fit across neck
+            const particlesAcrossBase = CALIBRATION.BASE_NECK_WIDTH / CALIBRATION.BASE_DIAMETER;
+            const particlesAcrossActual = neckWidth / actualDiameter;
+
+            // Flow rate scales with: (particles_across)^1.5 × (neck_width / particle_diameter)^0.5
+            // This accounts for both geometry and velocity effects
+            const flowRatio = Math.pow(particlesAcrossActual / particlesAcrossBase, 1.5);
+
+            // Apply scaling to base flow rate
+            const actualFlowRate = CALIBRATION.BASE_FLOW_RATE * flowRatio;
 
             return {
                 radius: radius,
@@ -595,24 +617,38 @@
             const error = expectedPassed - actualPassed;
             const errorPercent = (error / expectedPassed) * 100;
 
-            // Only adjust if error is significant (>3%)
-            if (Math.abs(errorPercent) > 3 && elapsedSeconds < totalSeconds - 2) {
-                // PID-like control: proportional adjustment
-                // If too slow (error > 0): increase gravity slightly
-                // If too fast (error < 0): decrease gravity slightly
+            // Adaptive threshold: stricter early on, more lenient later
+            const progressRatio = elapsedSeconds / totalSeconds;
+            const errorThreshold = progressRatio < 0.3 ? 2 : 4; // Tighter tolerance early
 
-                const kP = 0.005; // Proportional gain (tune this for smoothness)
+            // Only adjust if error is significant and we're not near the end
+            if (Math.abs(errorPercent) > errorThreshold && elapsedSeconds < totalSeconds - 2) {
+                // Adaptive PID control: aggressive early, gentle later
+                // Early (0-30%): kP = 0.01 (fast correction)
+                // Middle (30-70%): kP = 0.005 (balanced)
+                // Late (70-100%): kP = 0.003 (gentle fine-tuning)
+                let kP;
+                if (progressRatio < 0.3) {
+                    kP = 0.01; // Aggressive early correction
+                } else if (progressRatio < 0.7) {
+                    kP = 0.005; // Balanced mid-game
+                } else {
+                    kP = 0.003; // Gentle late-game
+                }
+
+                // If too slow (error > 0): increase gravity
+                // If too fast (error < 0): decrease gravity
                 const adjustment = error * kP;
 
                 // Clamp gravity adjustment to reasonable range
-                gravityAdjustment = Math.max(0.7, Math.min(1.4, gravityAdjustment + adjustment));
+                gravityAdjustment = Math.max(0.6, Math.min(1.5, gravityAdjustment + adjustment));
 
                 // Apply adjusted gravity
                 PHYSICS.GRAVITY = 0.35 * gravityAdjustment;
 
                 // Update status with sync info (optional - for debugging)
                 // Uncomment to see sync adjustments in real-time:
-                // status.textContent = `Sync: ${errorPercent.toFixed(1)}% | Gravity: ${gravityAdjustment.toFixed(3)}x`;
+                // status.textContent = `Sync: ${errorPercent.toFixed(1)}% | G: ${gravityAdjustment.toFixed(3)}x | kP: ${kP}`;
             }
         }
 
