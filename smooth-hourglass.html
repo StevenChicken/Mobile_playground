@@ -201,7 +201,7 @@
         // PRECISION SYNC SYSTEM - Real-time feedback control
         let timerStartTime = 0;          // When timer started (ms)
         let lastSyncTime = 0;             // Last sync check (ms)
-        let syncCheckInterval = 500;      // Check sync every 500ms
+        let syncCheckInterval = 200;      // Check sync every 200ms
         let targetParticlesPerSecond = 0; // Expected flow rate
         let gravityAdjustment = 1.0;      // Multiplier for gravity (0.8 to 1.2)
 
@@ -680,36 +680,42 @@
 
             // Adaptive threshold: stricter early on, more lenient later
             const progressRatio = elapsedSeconds / totalSeconds;
-            const errorThreshold = progressRatio < 0.3 ? 2 : 4; // Tighter tolerance early
+            const errorThreshold = progressRatio < 0.3 ? 1 : 2;
 
-            // Only adjust if error is significant and we're not near the end
-            if (Math.abs(errorPercent) > errorThreshold && elapsedSeconds < totalSeconds - 2) {
-                // Adaptive PID control: aggressive early, gentle later
-                // Early (0-30%): kP = 0.01 (fast correction)
-                // Middle (30-70%): kP = 0.005 (balanced)
-                // Late (70-100%): kP = 0.003 (gentle fine-tuning)
+            // Adjust throughout the entire timer duration
+            if (Math.abs(errorPercent) > errorThreshold) {
+                // Adaptive PID control with stronger gains
                 let kP;
                 if (progressRatio < 0.3) {
-                    kP = 0.01; // Aggressive early correction
+                    kP = 0.08; // Aggressive early correction
                 } else if (progressRatio < 0.7) {
-                    kP = 0.005; // Balanced mid-game
+                    kP = 0.04; // Strong mid-game
                 } else {
-                    kP = 0.003; // Gentle late-game
+                    kP = 0.02; // Still significant late-game
                 }
 
                 // If too slow (error > 0): increase gravity
                 // If too fast (error < 0): decrease gravity
                 const adjustment = error * kP;
 
-                // Clamp gravity adjustment to reasonable range
-                gravityAdjustment = Math.max(0.6, Math.min(1.5, gravityAdjustment + adjustment));
+                // Wide gravity range to handle large mismatches
+                gravityAdjustment = Math.max(0.2, Math.min(5.0, gravityAdjustment + adjustment));
 
                 // Apply adjusted gravity
                 PHYSICS.GRAVITY = 0.35 * gravityAdjustment;
+            }
 
-                // Update status with sync info (optional - for debugging)
-                // Uncomment to see sync adjustments in real-time:
-                // status.textContent = `Sync: ${errorPercent.toFixed(1)}% | G: ${gravityAdjustment.toFixed(3)}x | kP: ${kP}`;
+            // ENDGAME: When timer is almost done, ensure all particles flow through
+            if (progressRatio > 0.85 && particlesInTop > 0) {
+                const particlesStillInTop = particles.filter(p => p.y < HOURGLASS.neckY).length;
+                const fractionInTop = particlesStillInTop / particlesInTop;
+                const timeLeft = totalSeconds - elapsedSeconds;
+                if (fractionInTop > 0.03 && timeLeft > 0.5) {
+                    // Scale gravity boost by urgency
+                    const urgency = fractionInTop / Math.max(0.01, timeLeft / totalSeconds);
+                    gravityAdjustment = Math.max(gravityAdjustment, Math.min(5.0, 1.0 + urgency));
+                    PHYSICS.GRAVITY = 0.35 * gravityAdjustment;
+                }
             }
         }
 
