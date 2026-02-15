@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realistic 3D Hourglass Timer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #7e22ce 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4);
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .input-section {
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        input[type="number"] {
+            width: 70px;
+            padding: 10px;
+            font-size: 1.1em;
+            border: 2px solid #2a5298;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #7e22ce;
+            box-shadow: 0 0 10px rgba(126, 34, 206, 0.3);
+        }
+
+        label {
+            font-weight: bold;
+            color: #555;
+            font-size: 0.95em;
+        }
+
+        button {
+            background: linear-gradient(135deg, #2a5298 0%, #7e22ce 100%);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 1em;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 5px;
+            box-shadow: 0 4px 15px rgba(42, 82, 152, 0.4);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(42, 82, 152, 0.6);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .countdown-display {
+            font-size: 2.2em;
+            font-weight: bold;
+            color: #2a5298;
+            margin: 20px 0;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .canvas-container {
+            position: relative;
+            margin: 20px auto;
+            perspective: 1000px;
+        }
+
+        #hourglassCanvas {
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(135deg, rgba(200, 220, 255, 0.3) 0%, rgba(180, 200, 255, 0.2) 100%);
+        }
+
+        .status {
+            margin-top: 15px;
+            font-size: 1.1em;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .complete-message {
+            font-size: 1.4em;
+            color: #28a745;
+            font-weight: bold;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+
+        .info {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 10px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⏳ Realistic Physics Hourglass</h1>
+
+        <div class="input-section" id="inputSection">
+            <div class="input-group">
+                <label for="hours">Hours:</label>
+                <input type="number" id="hours" min="0" max="23" value="0">
+
+                <label for="minutes">Minutes:</label>
+                <input type="number" id="minutes" min="0" max="59" value="2">
+
+                <label for="seconds">Seconds:</label>
+                <input type="number" id="seconds" min="0" max="59" value="0">
+            </div>
+            <button id="startBtn">Start Timer</button>
+        </div>
+
+        <div class="countdown-display" id="countdown">00:00:00</div>
+
+        <div class="canvas-container">
+            <canvas id="hourglassCanvas" width="400" height="500"></canvas>
+        </div>
+
+        <div class="status" id="status">Set your time and start!</div>
+        <div class="info">Real physics simulation with 1000+ sand particles</div>
+
+        <div class="hidden" id="controls">
+            <button id="pauseBtn">Pause</button>
+            <button id="resetBtn">Reset</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('hourglassCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let totalSeconds = 0;
+        let remainingSeconds = 0;
+        let timerInterval = null;
+        let isPaused = false;
+        let animationFrameId = null;
+
+        const hoursInput = document.getElementById('hours');
+        const minutesInput = document.getElementById('minutes');
+        const secondsInput = document.getElementById('seconds');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const countdownDisplay = document.getElementById('countdown');
+        const inputSection = document.getElementById('inputSection');
+        const controls = document.getElementById('controls');
+        const status = document.getElementById('status');
+
+        // Physics constants
+        const GRAVITY = 0.3;
+        const PARTICLE_SIZE = 2.5;
+        const MAX_PARTICLES = 1200;
+        const SPAWN_RATE = 8;
+
+        // Hourglass geometry
+        const HOURGLASS = {
+            centerX: canvas.width / 2,
+            topY: 50,
+            bottomY: 450,
+            neckY: 250,
+            topWidth: 140,
+            bottomWidth: 140,
+            neckWidth: 12,
+            frameThickness: 8
+        };
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = 0;
+                this.radius = PARTICLE_SIZE + Math.random() * 0.5;
+                this.settled = false;
+                this.color = this.getRandomSandColor();
+            }
+
+            getRandomSandColor() {
+                const colors = [
+                    '#d4a574',
+                    '#c9944a',
+                    '#daa520',
+                    '#d2b48c',
+                    '#c19a6b'
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            update(particles) {
+                if (this.settled || isPaused) return;
+
+                // Apply gravity
+                this.vy += GRAVITY;
+
+                // Air resistance
+                this.vx *= 0.99;
+                this.vy *= 0.99;
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Check hourglass boundaries
+                this.checkBoundaries();
+
+                // Check collision with other particles
+                this.checkParticleCollision(particles);
+            }
+
+            checkBoundaries() {
+                const topHalf = this.y < HOURGLASS.neckY;
+
+                if (topHalf) {
+                    // Top chamber - conical shape
+                    const progress = (this.y - HOURGLASS.topY) / (HOURGLASS.neckY - HOURGLASS.topY);
+                    const currentWidth = HOURGLASS.topWidth - (HOURGLASS.topWidth - HOURGLASS.neckWidth) * progress;
+                    const leftBound = HOURGLASS.centerX - currentWidth / 2;
+                    const rightBound = HOURGLASS.centerX + currentWidth / 2;
+
+                    // Side walls
+                    if (this.x - this.radius < leftBound) {
+                        this.x = leftBound + this.radius;
+                        this.vx = Math.abs(this.vx) * 0.5;
+                        this.vy *= 0.8;
+                    }
+                    if (this.x + this.radius > rightBound) {
+                        this.x = rightBound - this.radius;
+                        this.vx = -Math.abs(this.vx) * 0.5;
+                        this.vy *= 0.8;
+                    }
+
+                    // Top boundary
+                    if (this.y - this.radius < HOURGLASS.topY) {
+                        this.y = HOURGLASS.topY + this.radius;
+                        this.vy = 0;
+                        this.settled = true;
+                    }
+
+                    // Approaching neck - funnel toward center
+                    if (this.y > HOURGLASS.neckY - 30) {
+                        const distFromCenter = this.x - HOURGLASS.centerX;
+                        this.vx -= distFromCenter * 0.02;
+                    }
+                } else {
+                    // Bottom chamber - conical shape
+                    const progress = (this.y - HOURGLASS.neckY) / (HOURGLASS.bottomY - HOURGLASS.neckY);
+                    const currentWidth = HOURGLASS.neckWidth + (HOURGLASS.bottomWidth - HOURGLASS.neckWidth) * progress;
+                    const leftBound = HOURGLASS.centerX - currentWidth / 2;
+                    const rightBound = HOURGLASS.centerX + currentWidth / 2;
+
+                    // Side walls
+                    if (this.x - this.radius < leftBound) {
+                        this.x = leftBound + this.radius;
+                        this.vx = Math.abs(this.vx) * 0.3;
+                        this.vy *= 0.7;
+                    }
+                    if (this.x + this.radius > rightBound) {
+                        this.x = rightBound - this.radius;
+                        this.vx = -Math.abs(this.vx) * 0.3;
+                        this.vy *= 0.7;
+                    }
+
+                    // Bottom boundary
+                    if (this.y + this.radius > HOURGLASS.bottomY) {
+                        this.y = HOURGLASS.bottomY - this.radius;
+                        this.vy = 0;
+                        this.vx *= 0.5;
+                        this.settled = true;
+                    }
+                }
+            }
+
+            checkParticleCollision(particles) {
+                for (let other of particles) {
+                    if (other === this || (!other.settled && Math.abs(this.y - other.y) > 20)) continue;
+
+                    const dx = other.x - this.x;
+                    const dy = other.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDist = this.radius + other.radius;
+
+                    if (distance < minDist) {
+                        // Collision response
+                        const angle = Math.atan2(dy, dx);
+                        const overlap = minDist - distance;
+
+                        if (!other.settled) {
+                            // Both moving
+                            this.x -= Math.cos(angle) * overlap * 0.5;
+                            this.y -= Math.sin(angle) * overlap * 0.5;
+                            other.x += Math.cos(angle) * overlap * 0.5;
+                            other.y += Math.sin(angle) * overlap * 0.5;
+                        } else {
+                            // Other is settled
+                            this.x -= Math.cos(angle) * overlap;
+                            this.y -= Math.sin(angle) * overlap;
+
+                            // Settle if on top of settled particle
+                            if (this.y < other.y - this.radius * 0.5) {
+                                this.vy = 0;
+                                this.vx *= 0.3;
+                                if (Math.abs(this.vx) < 0.1 && Math.abs(this.vy) < 0.1) {
+                                    this.settled = true;
+                                }
+                            }
+                        }
+
+                        // Dampen velocities
+                        this.vx *= 0.8;
+                        this.vy *= 0.8;
+                    }
+                }
+            }
+
+            draw() {
+                // 3D effect with shading
+                const gradient = ctx.createRadialGradient(
+                    this.x - this.radius * 0.3,
+                    this.y - this.radius * 0.3,
+                    0,
+                    this.x,
+                    this.y,
+                    this.radius
+                );
+                gradient.addColorStop(0, this.lightenColor(this.color, 30));
+                gradient.addColorStop(1, this.color);
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Highlight
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.beginPath();
+                ctx.arc(this.x - this.radius * 0.4, this.y - this.radius * 0.4, this.radius * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            lightenColor(color, percent) {
+                const num = parseInt(color.replace("#",""), 16);
+                const amt = Math.round(2.55 * percent);
+                const R = (num >> 16) + amt;
+                const G = (num >> 8 & 0x00FF) + amt;
+                const B = (num & 0x0000FF) + amt;
+                return "#" + (0x1000000 + (R<255?R<1?0:R:255)*0x10000 +
+                    (G<255?G<1?0:G:255)*0x100 + (B<255?B<1?0:B:255))
+                    .toString(16).slice(1);
+            }
+        }
+
+        let particles = [];
+        let spawnCounter = 0;
+
+        function drawHourglassFrame() {
+            ctx.save();
+
+            // Glass effect with gradient
+            const glassGradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            glassGradient.addColorStop(0, 'rgba(200, 230, 255, 0.2)');
+            glassGradient.addColorStop(0.5, 'rgba(180, 210, 255, 0.15)');
+            glassGradient.addColorStop(1, 'rgba(200, 230, 255, 0.2)');
+
+            // Draw glass chambers
+            ctx.fillStyle = glassGradient;
+            ctx.strokeStyle = 'rgba(100, 150, 200, 0.6)';
+            ctx.lineWidth = 2;
+
+            // Top chamber
+            ctx.beginPath();
+            ctx.moveTo(HOURGLASS.centerX - HOURGLASS.topWidth / 2, HOURGLASS.topY);
+            ctx.lineTo(HOURGLASS.centerX + HOURGLASS.topWidth / 2, HOURGLASS.topY);
+            ctx.lineTo(HOURGLASS.centerX + HOURGLASS.neckWidth / 2, HOURGLASS.neckY);
+            ctx.lineTo(HOURGLASS.centerX - HOURGLASS.neckWidth / 2, HOURGLASS.neckY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Bottom chamber
+            ctx.beginPath();
+            ctx.moveTo(HOURGLASS.centerX - HOURGLASS.neckWidth / 2, HOURGLASS.neckY);
+            ctx.lineTo(HOURGLASS.centerX + HOURGLASS.neckWidth / 2, HOURGLASS.neckY);
+            ctx.lineTo(HOURGLASS.centerX + HOURGLASS.bottomWidth / 2, HOURGLASS.bottomY);
+            ctx.lineTo(HOURGLASS.centerX - HOURGLASS.bottomWidth / 2, HOURGLASS.bottomY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Wooden frame with 3D effect
+            const frameGradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+            frameGradient.addColorStop(0, '#3d2817');
+            frameGradient.addColorStop(0.5, '#5c3d2e');
+            frameGradient.addColorStop(1, '#3d2817');
+
+            ctx.fillStyle = frameGradient;
+            ctx.strokeStyle = '#2d1810';
+            ctx.lineWidth = 3;
+
+            // Top frame
+            ctx.fillRect(HOURGLASS.centerX - HOURGLASS.topWidth / 2 - 10, HOURGLASS.topY - 15, HOURGLASS.topWidth + 20, 15);
+            ctx.strokeRect(HOURGLASS.centerX - HOURGLASS.topWidth / 2 - 10, HOURGLASS.topY - 15, HOURGLASS.topWidth + 20, 15);
+
+            // Bottom frame
+            ctx.fillRect(HOURGLASS.centerX - HOURGLASS.bottomWidth / 2 - 10, HOURGLASS.bottomY, HOURGLASS.bottomWidth + 20, 15);
+            ctx.strokeRect(HOURGLASS.centerX - HOURGLASS.bottomWidth / 2 - 10, HOURGLASS.bottomY, HOURGLASS.bottomWidth + 20, 15);
+
+            // Middle frame
+            ctx.fillRect(HOURGLASS.centerX - HOURGLASS.neckWidth / 2 - 8, HOURGLASS.neckY - 5, HOURGLASS.neckWidth + 16, 10);
+            ctx.strokeRect(HOURGLASS.centerX - HOURGLASS.neckWidth / 2 - 8, HOURGLASS.neckY - 5, HOURGLASS.neckWidth + 16, 10);
+
+            // Shine effect on glass
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(HOURGLASS.centerX - HOURGLASS.topWidth / 2 + 20, HOURGLASS.topY + 20);
+            ctx.lineTo(HOURGLASS.centerX - HOURGLASS.neckWidth / 2 + 5, HOURGLASS.neckY - 20);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function animate() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background gradient
+            const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            bgGradient.addColorStop(0, '#f0f4f8');
+            bgGradient.addColorStop(1, '#e8eef5');
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw frame first
+            drawHourglassFrame();
+
+            // Spawn new particles if timer is running
+            if (!isPaused && remainingSeconds > 0 && particles.length < MAX_PARTICLES) {
+                for (let i = 0; i < SPAWN_RATE; i++) {
+                    const spawnX = HOURGLASS.centerX + (Math.random() - 0.5) * (HOURGLASS.neckWidth - 6);
+                    particles.push(new Particle(spawnX, HOURGLASS.neckY + 2));
+                }
+            }
+
+            // Update and draw particles
+            particles.forEach(p => p.update(particles));
+            particles.forEach(p => p.draw());
+
+            // Remove particles that are too old (prevent memory leak)
+            if (particles.length > MAX_PARTICLES * 1.5) {
+                particles = particles.slice(-MAX_PARTICLES);
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function startTimer() {
+            const hours = parseInt(hoursInput.value) || 0;
+            const minutes = parseInt(minutesInput.value) || 0;
+            const seconds = parseInt(secondsInput.value) || 0;
+
+            totalSeconds = hours * 3600 + minutes * 60 + seconds;
+
+            if (totalSeconds <= 0) {
+                alert('Please enter a valid time!');
+                return;
+            }
+
+            remainingSeconds = totalSeconds;
+            isPaused = false;
+
+            inputSection.classList.add('hidden');
+            controls.classList.remove('hidden');
+            status.textContent = 'Timer running... Watch the sand flow!';
+            status.classList.remove('complete-message');
+
+            particles = [];
+            updateDisplay();
+
+            // Start animation
+            if (!animationFrameId) {
+                animate();
+            }
+
+            timerInterval = setInterval(() => {
+                if (!isPaused && remainingSeconds > 0) {
+                    remainingSeconds--;
+                    updateDisplay();
+
+                    if (remainingSeconds === 0) {
+                        completeTimer();
+                    }
+                }
+            }, 1000);
+        }
+
+        function pauseTimer() {
+            isPaused = !isPaused;
+            pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+            status.textContent = isPaused ? 'Timer paused' : 'Timer running... Watch the sand flow!';
+        }
+
+        function resetTimer() {
+            clearInterval(timerInterval);
+            cancelAnimationFrame(animationFrameId);
+            timerInterval = null;
+            animationFrameId = null;
+            isPaused = false;
+            remainingSeconds = 0;
+            totalSeconds = 0;
+            particles = [];
+
+            inputSection.classList.remove('hidden');
+            controls.classList.add('hidden');
+            countdownDisplay.textContent = '00:00:00';
+            status.textContent = 'Set your time and start!';
+            status.classList.remove('complete-message');
+            pauseBtn.textContent = 'Pause';
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            bgGradient.addColorStop(0, '#f0f4f8');
+            bgGradient.addColorStop(1, '#e8eef5');
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            drawHourglassFrame();
+        }
+
+        function completeTimer() {
+            clearInterval(timerInterval);
+            isPaused = true;
+            status.textContent = '✓ Time\'s up!';
+            status.classList.add('complete-message');
+        }
+
+        function updateDisplay() {
+            countdownDisplay.textContent = formatTime(remainingSeconds);
+        }
+
+        startBtn.addEventListener('click', startTimer);
+        pauseBtn.addEventListener('click', pauseTimer);
+        resetBtn.addEventListener('click', resetTimer);
+
+        hoursInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startTimer();
+        });
+        minutesInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startTimer();
+        });
+        secondsInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startTimer();
+        });
+
+        // Initial frame draw
+        const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        bgGradient.addColorStop(0, '#f0f4f8');
+        bgGradient.addColorStop(1, '#e8eef5');
+        ctx.fillStyle = bgGradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawHourglassFrame();
+    </script>
+</body>
+</html>
