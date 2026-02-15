@@ -198,6 +198,13 @@
         let currentCols = 35;
         let currentNeckWidth = 20; // Dynamic neck width
 
+        // PRECISION SYNC SYSTEM - Real-time feedback control
+        let timerStartTime = 0;          // When timer started (ms)
+        let lastSyncTime = 0;             // Last sync check (ms)
+        let syncCheckInterval = 500;      // Check sync every 500ms
+        let targetParticlesPerSecond = 0; // Expected flow rate
+        let gravityAdjustment = 1.0;      // Multiplier for gravity (0.8 to 1.2)
+
         // Empirical calibration constants (measured from physics)
         // With radius=2.0 (diameter=4px), gravity=0.35, neck=20px, 60 FPS:
         // Smaller particles = faster flow rate: ~150-180 particles/second
@@ -561,6 +568,54 @@
             ctx.restore();
         }
 
+        /**
+         * PRECISION SYNC SYSTEM
+         * Monitors actual vs expected progress and adjusts gravity for perfect timing
+         */
+        function checkAndAdjustSync() {
+            if (isPaused || totalSeconds === 0) return;
+
+            const now = Date.now();
+
+            // Check sync every 500ms
+            if (now - lastSyncTime < syncCheckInterval) return;
+            lastSyncTime = now;
+
+            // Calculate elapsed time in seconds
+            const elapsedSeconds = (now - timerStartTime) / 1000;
+            if (elapsedSeconds < 0.5) return; // Wait at least 0.5s before adjusting
+
+            // Expected particles that should have passed by now
+            const expectedPassed = targetParticlesPerSecond * elapsedSeconds;
+
+            // Actual particles that have passed
+            const actualPassed = particlesPassed;
+
+            // Calculate error (positive = too slow, negative = too fast)
+            const error = expectedPassed - actualPassed;
+            const errorPercent = (error / expectedPassed) * 100;
+
+            // Only adjust if error is significant (>3%)
+            if (Math.abs(errorPercent) > 3 && elapsedSeconds < totalSeconds - 2) {
+                // PID-like control: proportional adjustment
+                // If too slow (error > 0): increase gravity slightly
+                // If too fast (error < 0): decrease gravity slightly
+
+                const kP = 0.005; // Proportional gain (tune this for smoothness)
+                const adjustment = error * kP;
+
+                // Clamp gravity adjustment to reasonable range
+                gravityAdjustment = Math.max(0.7, Math.min(1.4, gravityAdjustment + adjustment));
+
+                // Apply adjusted gravity
+                PHYSICS.GRAVITY = 0.35 * gravityAdjustment;
+
+                // Update status with sync info (optional - for debugging)
+                // Uncomment to see sync adjustments in real-time:
+                // status.textContent = `Sync: ${errorPercent.toFixed(1)}% | Gravity: ${gravityAdjustment.toFixed(3)}x`;
+            }
+        }
+
         function animate() {
             // Clear with gradient background
             const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -582,6 +637,9 @@
                     particlesPassed++;
                 }
             });
+
+            // PRECISION SYNC: Check and adjust flow rate in real-time
+            checkAndAdjustSync();
 
             // Update particles
             particles.forEach(p => p.update());
@@ -652,8 +710,13 @@
             particlesInTop = particles.length;
             // Calculate target flow rate: all particles should pass through in totalSeconds
             targetFlowRate = particlesInTop / totalSeconds; // particles per second
+            targetParticlesPerSecond = targetFlowRate; // Store for sync system
 
-            status.textContent = `${particles.length} grains (r=${params.radius.toFixed(1)}px, neck=${params.neckWidth.toFixed(0)}px) → ${params.estimatedDuration}s for ${totalSeconds}s timer`;
+            // Initialize precision sync system
+            gravityAdjustment = 1.0;
+            PHYSICS.GRAVITY = 0.35; // Reset to base gravity
+
+            status.textContent = `${particles.length} grains (r=${params.radius.toFixed(1)}px, neck=${params.neckWidth.toFixed(0)}px) - PRECISION SYNC Active`;
         }
 
         function startTimer() {
@@ -673,6 +736,10 @@
 
             // Fill top chamber with sand
             fillTopChamber();
+
+            // Initialize precision sync timing
+            timerStartTime = Date.now();
+            lastSyncTime = timerStartTime;
 
             inputSection.classList.add('hidden');
             controls.classList.remove('hidden');
@@ -698,9 +765,19 @@
         }
 
         function pauseTimer() {
+            const wasPaused = isPaused;
             isPaused = !isPaused;
             pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
             status.textContent = isPaused ? 'Paused' : 'Timer running...';
+
+            // Adjust timer start time when resuming to account for pause duration
+            if (!isPaused && wasPaused) {
+                // Resuming: adjust start time forward by pause duration
+                const now = Date.now();
+                const pauseDuration = now - lastSyncTime;
+                timerStartTime += pauseDuration;
+                lastSyncTime = now;
+            }
         }
 
         function resetTimer() {
