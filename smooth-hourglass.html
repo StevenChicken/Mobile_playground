@@ -220,11 +220,25 @@
             // 1. Pack as many particles as possible in chamber
             // 2. Adjust particle SIZE to control flow rate
             // 3. Flow rate ∝ (neck_width / particle_diameter)²
+            // 4. Iterate to account for grid clamping
 
-            // Calculate required flow rate for this timer duration
-            // Use maximum particles we can fit
-            const maxParticles = CALIBRATION.MAX_PARTICLES;
-            const requiredFlowRate = maxParticles / timerSeconds; // particles per second needed
+            // First estimate: assume we can fit MAX_PARTICLES
+            const fillFactor = 0.65;
+            const aspectRatio = 1.15;
+
+            // Calculate grid dimensions for max particles
+            let targetParticles = CALIBRATION.MAX_PARTICLES;
+            let gridCells = targetParticles / fillFactor;
+            let cols = Math.round(Math.sqrt(gridCells / aspectRatio));
+            let rows = Math.round(cols * aspectRatio);
+            let clampedRows = Math.max(25, Math.min(70, rows));
+            let clampedCols = Math.max(20, Math.min(60, cols));
+
+            // Actual particles we can fit after clamping
+            const actualMaxParticles = Math.round(clampedRows * clampedCols * fillFactor);
+
+            // NOW calculate required flow rate using actual particle count
+            const requiredFlowRate = actualMaxParticles / timerSeconds;
 
             // Calculate radius needed to achieve this flow rate
             // Flow rate ratio = (base_diameter / new_diameter)²
@@ -241,27 +255,13 @@
             // Calculate actual flow rate with this radius
             const actualFlowRate = CALIBRATION.BASE_FLOW_RATE * Math.pow(CALIBRATION.BASE_DIAMETER / actualDiameter, 2);
 
-            // Calculate grid dimensions to pack maximum particles
-            // Fill factor accounts for cone shape
-            const fillFactor = 0.65;
-            const gridCells = maxParticles / fillFactor;
-
-            // Prefer more rows than cols for vertical chamber
-            const aspectRatio = 1.15;
-            const cols = Math.round(Math.sqrt(gridCells / aspectRatio));
-            const rows = Math.round(cols * aspectRatio);
-
-            const clampedRows = Math.max(25, Math.min(70, rows));
-            const clampedCols = Math.max(20, Math.min(60, cols));
-            const estimatedParticles = Math.round(clampedRows * clampedCols * fillFactor);
-
             return {
                 radius: radius,
                 rows: clampedRows,
                 cols: clampedCols,
-                estimatedParticles: estimatedParticles,
+                estimatedParticles: actualMaxParticles,
                 estimatedFlowRate: actualFlowRate,
-                estimatedDuration: Math.round(estimatedParticles / actualFlowRate)
+                estimatedDuration: Math.round(actualMaxParticles / actualFlowRate)
             };
         }
 
