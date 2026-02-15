@@ -227,7 +227,8 @@
             // Calibration: Measured base flow rate for reference configuration
             // This is the ONE empirical measurement needed
             // For diameter=4px, neck=20px at 60 FPS
-            BASE_FLOW_RATE: 50,         // particles/second (CONSERVATIVE - measured)
+            // VERY CONSERVATIVE - actual is ~40-60 p/s, using 35 for safety
+            BASE_FLOW_RATE: 35,         // particles/second (CONSERVATIVE)
 
             // Constraints
             MAX_PARTICLES: 4500,        // Maximum particles we can fit
@@ -281,19 +282,43 @@
         }
 
         /**
+         * INVERSE BEVERLOO: Solve for grain diameter given target flow rate
+         * Given: orifice D, target flow F
+         * Solve: grain diameter d such that Beverloo(D, d) = F
+         *
+         * Beverloo: F = C × ρ × √g × (D - k×d)^2.5
+         * Solve for d: d = (D - (F / (C×ρ×√g))^(1/2.5)) / k
+         */
+        function inverseBeverloo(targetFlowRate, orifice) {
+            const C = CALIBRATION.DISCHARGE_COEFF;
+            const k = CALIBRATION.SHAPE_FACTOR;
+            const rho = CALIBRATION.BULK_DENSITY;
+            const g = CALIBRATION.GRAVITY;
+
+            // Scale target flow to absolute units
+            const baseEffective = CALIBRATION.BASE_NECK_WIDTH - (k * CALIBRATION.BASE_DIAMETER);
+            const baseFlowAbs = C * rho * Math.pow(g, 0.5) * Math.pow(baseEffective, 2.5);
+            const scaleFactor = CALIBRATION.BASE_FLOW_RATE / baseFlowAbs;
+            const targetFlowAbs = targetFlowRate / scaleFactor;
+
+            // Solve: D_eff = (F / (C×ρ×√g))^(1/2.5)
+            const coeff = C * rho * Math.pow(g, 0.5);
+            const D_eff = Math.pow(targetFlowAbs / coeff, 1.0 / 2.5);
+
+            // Solve: d = (D - D_eff) / k
+            const grainDiameter = (orifice - D_eff) / k;
+
+            return Math.max(0.5, grainDiameter); // Minimum grain size
+        }
+
+        /**
          * Calculate optimal particle parameters based on timer duration
-         * Uses BEVERLOO LAW for accurate granular flow physics
+         * Uses BEVERLOO LAW with INVERSE SOLVER for accurate initial parameters
          * Returns: { radius, neckWidth, rows, cols, estimatedParticles, estimatedFlowRate }
          */
         function calculateParticleParams(timerSeconds) {
-            // Strategy:
-            // 1. Pack as many particles as possible in chamber
-            // 2. Adjust BOTH particle size AND neck width to control flow rate
-            // 3. Flow rate = BASE_FLOW × (neck/BASE_NECK)² × (BASE_DIA/dia)²
-            // 4. Prefer adjusting particle size first, then neck if needed
-
-            const fillFactor = 0.75; // Higher fill factor with tighter packing
-            const aspectRatio = 1.2; // Slightly more vertical
+            const fillFactor = 0.75;
+            const aspectRatio = 1.2;
 
             // Calculate grid dimensions for max particles
             let targetParticles = CALIBRATION.MAX_PARTICLES;
@@ -309,51 +334,51 @@
             // Required flow rate using actual particle count
             const requiredFlowRate = actualMaxParticles / timerSeconds;
 
-            // Calculate combined scaling factor needed
-            const flowScaleFactor = requiredFlowRate / CALIBRATION.BASE_FLOW_RATE;
-
-            // Flow = BASE × (neck/BASE_NECK)² × (BASE_DIA/dia)²
-            // flowScaleFactor = (neck/BASE_NECK)² × (BASE_DIA/dia)²
-
-            // Strategy: Try to achieve target with particle size first
-            // Then adjust neck width if particle size is clamped
-
-            // Start with base neck width
+            // INVERSE BEVERLOO: Solve for optimal grain diameter
+            // Strategy: Keep neck at base, adjust grain size
             let neckWidth = CALIBRATION.BASE_NECK_WIDTH;
-            let radius = CALIBRATION.BASE_RADIUS;
-
-            // Calculate required diameter scaling
-            // (BASE_DIA/dia)² = flowScaleFactor / (neck/BASE_NECK)²
-            // With base neck: (BASE_DIA/dia)² = flowScaleFactor
-            let diameterScale = 1.0 / Math.sqrt(flowScaleFactor);
-            let targetDiameter = CALIBRATION.BASE_DIAMETER * diameterScale;
-            let targetRadius = targetDiameter / 2;
+            let grainDiameter = inverseBeverloo(requiredFlowRate, neckWidth);
+            let radius = grainDiameter / 2;
 
             // Check if radius is within bounds
-            if (targetRadius < CALIBRATION.MIN_RADIUS) {
-                // Need faster flow, but hit min radius
-                // Widen the neck to compensate
+            if (radius < CALIBRATION.MIN_RADIUS) {
+                // Grain too small - need to widen neck instead
                 radius = CALIBRATION.MIN_RADIUS;
-                const radiusContribution = Math.pow(CALIBRATION.BASE_DIAMETER / (radius * 2), 2);
-                const neckScaleNeeded = Math.sqrt(flowScaleFactor / radiusContribution);
-                neckWidth = CALIBRATION.BASE_NECK_WIDTH * neckScaleNeeded;
-                neckWidth = Math.min(CALIBRATION.MAX_NECK_WIDTH, neckWidth);
-            } else if (targetRadius > CALIBRATION.MAX_RADIUS) {
-                // Need slower flow, but hit max radius
-                // Narrow the neck to compensate
+                grainDiameter = radius * 2;
+
+                // Binary search for optimal neck width
+                let neckLow = CALIBRATION.BASE_NECK_WIDTH;
+                let neckHigh = CALIBRATION.MAX_NECK_WIDTH;
+                for (let i = 0; i < 10; i++) {
+                    neckWidth = (neckLow + neckHigh) / 2;
+                    const testFlow = beverlooFlowRate(neckWidth, grainDiameter);
+                    if (testFlow < requiredFlowRate) {
+                        neckLow = neckWidth; // Need wider
+                    } else {
+                        neckHigh = neckWidth; // Need narrower
+                    }
+                }
+            } else if (radius > CALIBRATION.MAX_RADIUS) {
+                // Grain too large - need to narrow neck instead
                 radius = CALIBRATION.MAX_RADIUS;
-                const radiusContribution = Math.pow(CALIBRATION.BASE_DIAMETER / (radius * 2), 2);
-                const neckScaleNeeded = Math.sqrt(flowScaleFactor / radiusContribution);
-                neckWidth = CALIBRATION.BASE_NECK_WIDTH * neckScaleNeeded;
-                neckWidth = Math.max(CALIBRATION.MIN_NECK_WIDTH, neckWidth);
-            } else {
-                // Radius is fine, use it
-                radius = targetRadius;
+                grainDiameter = radius * 2;
+
+                // Binary search for optimal neck width
+                let neckLow = CALIBRATION.MIN_NECK_WIDTH;
+                let neckHigh = CALIBRATION.BASE_NECK_WIDTH;
+                for (let i = 0; i < 10; i++) {
+                    neckWidth = (neckLow + neckHigh) / 2;
+                    const testFlow = beverlooFlowRate(neckWidth, grainDiameter);
+                    if (testFlow < requiredFlowRate) {
+                        neckLow = neckWidth; // Need wider
+                    } else {
+                        neckHigh = neckWidth; // Need narrower
+                    }
+                }
             }
 
             // Calculate actual flow rate using BEVERLOO LAW
-            const actualDiameter = radius * 2;
-            const actualFlowRate = beverlooFlowRate(neckWidth, actualDiameter);
+            const actualFlowRate = beverlooFlowRate(neckWidth, grainDiameter);
 
             return {
                 radius: radius,
