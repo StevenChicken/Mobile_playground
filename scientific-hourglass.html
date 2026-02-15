@@ -228,12 +228,6 @@
         let isPaused = false;
         let animationFrameId = null;
         let spawnAccumulator = 0;
-        let totalSpawned = 0;
-        let timerStartTime = 0;
-        let spawnDuration = 0;
-        let totalPausedTime = 0;
-        let pauseStartTime = 0;
-        const FALL_TIME_BUFFER = 1; // seconds reserved for last grain to settle
 
         const hoursInput = document.getElementById('hours');
         const minutesInput = document.getElementById('minutes');
@@ -586,18 +580,17 @@
                 physicsStep(dt);
             }
 
-            // Spawn particles at a rate synced to the countdown timer
-            if (!isPaused && remainingSeconds > 0 && totalSpawned < PHYSICS.MAX_PARTICLES) {
-                const elapsed = (Date.now() - timerStartTime - totalPausedTime) / 1000;
-                if (elapsed >= 0 && elapsed < spawnDuration) {
-                    const targetSpawned = Math.min(PHYSICS.MAX_PARTICLES, Math.floor((elapsed / spawnDuration) * PHYSICS.MAX_PARTICLES));
-                    const toSpawn = targetSpawned - totalSpawned;
-                    for (let i = 0; i < toSpawn; i++) {
-                        const spawnX = HOURGLASS.centerX + (Math.random() - 0.5) * (HOURGLASS.neckWidth - 4);
-                        const spawnY = HOURGLASS.neckY + 3;
-                        particles.push(new Particle(spawnX, spawnY));
-                        totalSpawned++;
-                    }
+            // Spawn particles (Beverloo flow - constant rate)
+            if (!isPaused && remainingSeconds > 0 && particles.length < PHYSICS.MAX_PARTICLES) {
+                // Spawn rate based on Beverloo equation (particles per frame)
+                const spawnRate = 12; // Constant flow rate
+                spawnAccumulator += spawnRate;
+
+                while (spawnAccumulator >= 1 && particles.length < PHYSICS.MAX_PARTICLES) {
+                    const spawnX = HOURGLASS.centerX + (Math.random() - 0.5) * (HOURGLASS.neckWidth - 4);
+                    const spawnY = HOURGLASS.neckY + 3;
+                    particles.push(new Particle(spawnX, spawnY));
+                    spawnAccumulator -= 1;
                 }
             }
 
@@ -635,10 +628,6 @@
             isPaused = false;
             particles = [];
             spawnAccumulator = 0;
-            totalSpawned = 0;
-            totalPausedTime = 0;
-            spawnDuration = Math.max(1, totalSeconds - FALL_TIME_BUFFER);
-            timerStartTime = Date.now();
 
             inputSection.classList.add('hidden');
             controls.classList.remove('hidden');
@@ -667,11 +656,6 @@
             isPaused = !isPaused;
             pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
             status.textContent = isPaused ? 'Simulation paused' : 'Physics simulation running...';
-            if (isPaused) {
-                pauseStartTime = Date.now();
-            } else {
-                totalPausedTime += Date.now() - pauseStartTime;
-            }
         }
 
         function resetTimer() {
@@ -684,8 +668,6 @@
             totalSeconds = 0;
             particles = [];
             spawnAccumulator = 0;
-            totalSpawned = 0;
-            totalPausedTime = 0;
 
             inputSection.classList.remove('hidden');
             controls.classList.add('hidden');

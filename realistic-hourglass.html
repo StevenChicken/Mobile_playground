@@ -406,12 +406,6 @@
 
         let particles = [];
         let spawnCounter = 0;
-        let totalSpawned = 0;
-        let timerStartTime = 0;
-        let spawnDuration = 0;
-        let totalPausedTime = 0;
-        let pauseStartTime = 0;
-        const FALL_TIME_BUFFER = 1; // seconds reserved for last grain to settle
 
         function drawHourglassFrame() {
             ctx.save();
@@ -494,17 +488,11 @@
             // Draw frame first
             drawHourglassFrame();
 
-            // Spawn particles at a rate synced to the countdown timer
-            if (!isPaused && remainingSeconds > 0 && totalSpawned < MAX_PARTICLES) {
-                const elapsed = (Date.now() - timerStartTime - totalPausedTime) / 1000;
-                if (elapsed >= 0 && elapsed < spawnDuration) {
-                    const targetSpawned = Math.min(MAX_PARTICLES, Math.floor((elapsed / spawnDuration) * MAX_PARTICLES));
-                    const toSpawn = targetSpawned - totalSpawned;
-                    for (let i = 0; i < toSpawn; i++) {
-                        const spawnX = HOURGLASS.centerX + (Math.random() - 0.5) * (HOURGLASS.neckWidth - 6);
-                        particles.push(new Particle(spawnX, HOURGLASS.neckY + 2));
-                        totalSpawned++;
-                    }
+            // Spawn new particles if timer is running
+            if (!isPaused && remainingSeconds > 0 && particles.length < MAX_PARTICLES) {
+                for (let i = 0; i < SPAWN_RATE; i++) {
+                    const spawnX = HOURGLASS.centerX + (Math.random() - 0.5) * (HOURGLASS.neckWidth - 6);
+                    particles.push(new Particle(spawnX, HOURGLASS.neckY + 2));
                 }
             }
 
@@ -548,10 +536,6 @@
             status.classList.remove('complete-message');
 
             particles = [];
-            totalSpawned = 0;
-            totalPausedTime = 0;
-            spawnDuration = Math.max(1, totalSeconds - FALL_TIME_BUFFER);
-            timerStartTime = Date.now();
             updateDisplay();
 
             // Start animation
@@ -575,11 +559,6 @@
             isPaused = !isPaused;
             pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
             status.textContent = isPaused ? 'Timer paused' : 'Timer running... Watch the sand flow!';
-            if (isPaused) {
-                pauseStartTime = Date.now();
-            } else {
-                totalPausedTime += Date.now() - pauseStartTime;
-            }
         }
 
         function resetTimer() {
@@ -591,8 +570,6 @@
             remainingSeconds = 0;
             totalSeconds = 0;
             particles = [];
-            totalSpawned = 0;
-            totalPausedTime = 0;
 
             inputSection.classList.remove('hidden');
             controls.classList.add('hidden');
