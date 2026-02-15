@@ -193,6 +193,66 @@
         let particlesInTop = 0;
         let particlesPassed = 0;
         let targetFlowRate = 0; // particles per second
+        let currentParticleRadius = 2.5; // Dynamic particle radius
+        let currentRows = 40;
+        let currentCols = 35;
+
+        // Empirical calibration constants (measured from testing)
+        // With radius=2.5, gravity=0.35, neck=20px:
+        // ~1200 particles flow through in approximately 60 seconds
+        const CALIBRATION = {
+            BASE_PARTICLES: 1200,   // Number of particles for base time
+            BASE_FLOW_TIME: 60,     // Base time in seconds
+            PARTICLES_PER_SECOND: 20, // Empirical flow rate through neck
+        };
+
+        /**
+         * Calculate optimal particle parameters based on timer duration
+         * Returns: { radius, rows, cols, totalParticles }
+         */
+        function calculateParticleParams(timerSeconds) {
+            // Strategy: Adjust particle count to match timer duration
+            // Keep physics constant for realistic simulation
+
+            // Target number of particles based on flow rate
+            const targetParticles = CALIBRATION.PARTICLES_PER_SECOND * timerSeconds;
+
+            // Clamp to reasonable limits
+            const clampedParticles = Math.max(300, Math.min(3000, targetParticles));
+
+            // Adjust particle size based on duration
+            let radius;
+            if (timerSeconds < 30) {
+                // Short timers: smaller particles (faster flow per particle)
+                radius = 2.0;
+            } else if (timerSeconds < 180) {
+                // Medium timers: standard particles
+                radius = 2.5;
+            } else if (timerSeconds < 600) {
+                // Long timers: slightly larger particles
+                radius = 2.8;
+            } else {
+                // Very long timers: larger particles (slower flow)
+                radius = 3.2;
+            }
+
+            // Calculate grid dimensions to achieve target particle count
+            // Account for triangular chamber shape (fill factor ~0.65)
+            const fillFactor = 0.65;
+            const gridCells = clampedParticles / fillFactor;
+
+            // Prefer more rows than cols for vertical chamber
+            const aspectRatio = 1.2; // rows/cols ratio
+            const cols = Math.round(Math.sqrt(gridCells / aspectRatio));
+            const rows = Math.round(cols * aspectRatio);
+
+            return {
+                radius: radius,
+                rows: Math.max(20, Math.min(60, rows)),
+                cols: Math.max(15, Math.min(50, cols)),
+                targetParticles: clampedParticles
+            };
+        }
 
         const hoursInput = document.getElementById('hours');
         const minutesInput = document.getElementById('minutes');
@@ -206,12 +266,14 @@
         const status = document.getElementById('status');
 
         class Particle {
-            constructor(x, y) {
+            constructor(x, y, customRadius = null) {
                 this.x = x;
                 this.y = y;
                 this.vx = (Math.random() - 0.5) * 0.5;
                 this.vy = 0;
-                this.radius = PHYSICS.PARTICLE_RADIUS + (Math.random() - 0.5) * PHYSICS.RADIUS_VARIANCE;
+                // Use custom radius if provided, otherwise use current dynamic radius
+                const baseRadius = customRadius !== null ? customRadius : currentParticleRadius;
+                this.radius = baseRadius + (Math.random() - 0.5) * PHYSICS.RADIUS_VARIANCE;
                 this.inTopChamber = (y < HOURGLASS.neckY);
 
                 // Beautiful golden sand colors
@@ -463,7 +525,7 @@
             // Draw frame
             drawHourglassFrame();
 
-            // Track particles passing through neck
+            // Track particles passing through neck (for statistics)
             particles.forEach(p => {
                 const wasInTop = p.inTopChamber;
                 p.inTopChamber = (p.y < HOURGLASS.neckY);
@@ -473,22 +535,6 @@
                     particlesPassed++;
                 }
             });
-
-            // Calculate expected progress vs actual progress
-            if (totalSeconds > 0 && remainingSeconds > 0 && !isPaused) {
-                const timeElapsed = totalSeconds - remainingSeconds;
-                const expectedPassed = targetFlowRate * timeElapsed;
-                const progressRatio = particlesPassed / Math.max(1, expectedPassed);
-
-                // Adjust gravity dynamically to sync with countdown
-                // If too fast (progressRatio > 1), reduce gravity
-                // If too slow (progressRatio < 1), increase gravity
-                if (progressRatio > 1.1) {
-                    PHYSICS.GRAVITY = Math.max(0.15, PHYSICS.GRAVITY * 0.98);
-                } else if (progressRatio < 0.9) {
-                    PHYSICS.GRAVITY = Math.min(0.6, PHYSICS.GRAVITY * 1.02);
-                }
-            }
 
             // Update particles
             particles.forEach(p => p.update());
@@ -514,30 +560,34 @@
         }
 
         function fillTopChamber() {
+            // Calculate optimal particle parameters for timer duration
+            const params = calculateParticleParams(totalSeconds);
+            currentParticleRadius = params.radius;
+            currentRows = params.rows;
+            currentCols = params.cols;
+
             // Fill the top chamber with particles
             particles = [];
             particlesPassed = 0;
             const chamberHeight = HOURGLASS.neckY - HOURGLASS.topY - 20;
-            const cols = 35; // Number of columns
-            const rows = 40; // Number of rows
 
-            for (let row = 0; row < rows; row++) {
-                for (let col = 0; col < cols; col++) {
+            for (let row = 0; row < currentRows; row++) {
+                for (let col = 0; col < currentCols; col++) {
                     // Calculate position in top chamber (triangular packing)
-                    const relY = (row / rows) * chamberHeight;
+                    const relY = (row / currentRows) * chamberHeight;
                     const t = relY / chamberHeight;
                     const currentWidth = HOURGLASS.topWidth - (HOURGLASS.topWidth - HOURGLASS.neckWidth) * t;
 
                     // Hexagonal packing for realistic sand arrangement
-                    const offset = (row % 2) * (PHYSICS.PARTICLE_RADIUS * 2);
-                    const spacing = PHYSICS.PARTICLE_RADIUS * 2.2;
+                    const offset = (row % 2) * (currentParticleRadius * 2);
+                    const spacing = currentParticleRadius * 2.2;
                     const x = HOURGLASS.centerX - (currentWidth / 2) + offset + (col * spacing);
                     const y = HOURGLASS.topY + 10 + (row * spacing);
 
                     // Only add if within bounds
-                    if (x > HOURGLASS.centerX - currentWidth / 2 + PHYSICS.PARTICLE_RADIUS &&
-                        x < HOURGLASS.centerX + currentWidth / 2 - PHYSICS.PARTICLE_RADIUS) {
-                        const particle = new Particle(x, y);
+                    if (x > HOURGLASS.centerX - currentWidth / 2 + currentParticleRadius &&
+                        x < HOURGLASS.centerX + currentWidth / 2 - currentParticleRadius) {
+                        const particle = new Particle(x, y, currentParticleRadius);
                         particle.vx = 0;
                         particle.vy = 0;
                         particle.inTopChamber = true; // Track which chamber
@@ -550,7 +600,7 @@
             // Calculate target flow rate: all particles should pass through in totalSeconds
             targetFlowRate = particlesInTop / totalSeconds; // particles per second
 
-            status.textContent = `${particles.length} sand grains ready to flow!`;
+            status.textContent = `${particles.length} grains (${params.radius.toFixed(1)}px) - ${totalSeconds}s timer`;
         }
 
         function startTimer() {
