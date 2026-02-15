@@ -164,13 +164,13 @@
 
         // Optimized physics settings
         const PHYSICS = {
-            GRAVITY: 0.4,
+            GRAVITY: 0.35,
             PARTICLE_RADIUS: 2.5,
-            RADIUS_VARIANCE: 0.8,
-            DAMPING: 0.995,
-            BOUNCE: 0.3,
+            RADIUS_VARIANCE: 0.6,
+            DAMPING: 0.992,
+            BOUNCE: 0.25,
+            FRICTION: 0.85, // Wall friction
             MAX_PARTICLES: 3000,
-            SPAWN_RATE: 8, // particles per frame when flowing
         };
 
         // Hourglass geometry
@@ -248,20 +248,23 @@
                     const left = HOURGLASS.centerX - width / 2 + this.radius;
                     const right = HOURGLASS.centerX + width / 2 - this.radius;
 
-                    // Wall collisions
+                    // Wall collisions with friction
                     if (this.x < left) {
                         this.x = left;
                         this.vx = Math.abs(this.vx) * PHYSICS.BOUNCE;
+                        this.vy *= PHYSICS.FRICTION;
                     }
                     if (this.x > right) {
                         this.x = right;
                         this.vx = -Math.abs(this.vx) * PHYSICS.BOUNCE;
+                        this.vy *= PHYSICS.FRICTION;
                     }
 
                     // Top boundary
                     if (this.y < HOURGLASS.topY + this.radius) {
                         this.y = HOURGLASS.topY + this.radius;
                         this.vy = Math.abs(this.vy) * PHYSICS.BOUNCE;
+                        this.vx *= PHYSICS.FRICTION;
                     }
                 } else {
                     // Bottom chamber
@@ -273,21 +276,23 @@
                     const left = HOURGLASS.centerX - width / 2 + this.radius;
                     const right = HOURGLASS.centerX + width / 2 - this.radius;
 
-                    // Wall collisions
+                    // Wall collisions with friction
                     if (this.x < left) {
                         this.x = left;
                         this.vx = Math.abs(this.vx) * PHYSICS.BOUNCE;
+                        this.vy *= PHYSICS.FRICTION;
                     }
                     if (this.x > right) {
                         this.x = right;
                         this.vx = -Math.abs(this.vx) * PHYSICS.BOUNCE;
+                        this.vy *= PHYSICS.FRICTION;
                     }
 
-                    // Bottom boundary
+                    // Bottom boundary - particles settle here
                     if (this.y > HOURGLASS.bottomY - this.radius) {
                         this.y = HOURGLASS.bottomY - this.radius;
                         this.vy = 0;
-                        this.vx *= 0.8;
+                        this.vx *= PHYSICS.FRICTION;
                     }
                 }
             }
@@ -467,20 +472,6 @@
             // Draw particles
             particles.forEach(p => p.draw());
 
-            // Spawn new particles at the neck (flowing down)
-            if (!isPaused && remainingSeconds > 0 && particles.length < PHYSICS.MAX_PARTICLES) {
-                for (let i = 0; i < PHYSICS.SPAWN_RATE; i++) {
-                    const spawnX = HOURGLASS.centerX + (Math.random() - 0.5) * (HOURGLASS.neckWidth - 8);
-                    const spawnY = HOURGLASS.neckY + 5;
-                    particles.push(new Particle(spawnX, spawnY));
-                }
-            }
-
-            // Remove excess particles from top
-            if (particles.length > PHYSICS.MAX_PARTICLES) {
-                particles = particles.slice(-PHYSICS.MAX_PARTICLES);
-            }
-
             animationFrameId = requestAnimationFrame(animate);
         }
 
@@ -489,6 +480,40 @@
             const m = Math.floor((seconds % 3600) / 60);
             const s = seconds % 60;
             return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function fillTopChamber() {
+            // Fill the top chamber with particles
+            particles = [];
+            const chamberHeight = HOURGLASS.neckY - HOURGLASS.topY - 20;
+            const cols = 35; // Number of columns
+            const rows = 40; // Number of rows
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    // Calculate position in top chamber (triangular packing)
+                    const relY = (row / rows) * chamberHeight;
+                    const t = relY / chamberHeight;
+                    const currentWidth = HOURGLASS.topWidth - (HOURGLASS.topWidth - HOURGLASS.neckWidth) * t;
+
+                    // Hexagonal packing for realistic sand arrangement
+                    const offset = (row % 2) * (PHYSICS.PARTICLE_RADIUS * 2);
+                    const spacing = PHYSICS.PARTICLE_RADIUS * 2.2;
+                    const x = HOURGLASS.centerX - (currentWidth / 2) + offset + (col * spacing);
+                    const y = HOURGLASS.topY + 10 + (row * spacing);
+
+                    // Only add if within bounds
+                    if (x > HOURGLASS.centerX - currentWidth / 2 + PHYSICS.PARTICLE_RADIUS &&
+                        x < HOURGLASS.centerX + currentWidth / 2 - PHYSICS.PARTICLE_RADIUS) {
+                        const particle = new Particle(x, y);
+                        particle.vx = 0;
+                        particle.vy = 0;
+                        particles.push(particle);
+                    }
+                }
+            }
+
+            status.textContent = `${particles.length} sand grains ready to flow!`;
         }
 
         function startTimer() {
@@ -505,11 +530,13 @@
 
             remainingSeconds = totalSeconds;
             isPaused = false;
-            particles = [];
+
+            // Fill top chamber with sand
+            fillTopChamber();
 
             inputSection.classList.add('hidden');
             controls.classList.remove('hidden');
-            status.textContent = 'Timer running...';
+            status.textContent = 'Watch the sand flow naturally!';
             status.classList.remove('complete-message');
 
             updateDisplay();
