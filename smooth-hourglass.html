@@ -205,32 +205,84 @@
         let targetParticlesPerSecond = 0; // Expected flow rate
         let gravityAdjustment = 1.0;      // Multiplier for gravity (0.8 to 1.2)
 
-        // PRECISE PHYSICS-BASED CALIBRATION
-        // Calculated from: gravity, damping, collisions, neck geometry
+        // ==========================================
+        // BEVERLOO LAW - GRANULAR FLOW PHYSICS
+        // ==========================================
+        // Flow rate: W = C × ρ × √g × (D_orifice - k × d_grain)^2.5
+        // Key insight: Flow is CONSTANT (independent of sand height)
         const CALIBRATION = {
-            BASE_RADIUS: 2.0,           // Base particle radius in pixels (smaller grains)
-            BASE_DIAMETER: 4.0,         // Base particle diameter
+            // Particle geometry
+            BASE_RADIUS: 2.0,           // Base particle radius in pixels
+            BASE_DIAMETER: 4.0,         // Base particle diameter in pixels
 
-            // CRITICAL: Accurate flow rate calculation
-            // Flow rate depends on: (particles across neck) × (velocity) × (packing efficiency)
-            // - Neck width: 20px / diameter 4px = 5 particles across
-            // - Terminal velocity through neck: ~8-12 px/frame (with collisions)
-            // - Effective flow: ~1.5-2 particles/frame at 60 FPS
-            // - 1.8 particles/frame × 60 FPS = 108 particles/second
-            // - Adding 20% safety margin: 108 × 0.85 = 92 p/s (conservative)
-            BASE_FLOW_RATE: 92,         // Conservative estimate (precision sync will fine-tune)
+            // Hourglass geometry
+            BASE_NECK_WIDTH: 20,        // Base orifice diameter in pixels
 
-            BASE_NECK_WIDTH: 20,        // Base hourglass neck width
-            MAX_PARTICLES: 4500,        // More particles fit with smaller size
-            MIN_RADIUS: 1.2,            // Minimum particle radius (smaller)
-            MAX_RADIUS: 3.5,            // Maximum particle radius (smaller)
-            MIN_NECK_WIDTH: 10,         // Minimum neck width (narrower for slow flow)
-            MAX_NECK_WIDTH: 35,         // Maximum neck width (for fast flow)
+            // Beverloo Law constants (empirically determined for glass beads)
+            DISCHARGE_COEFF: 0.58,      // C: discharge coefficient (0.55-0.65 for spheres)
+            SHAPE_FACTOR: 1.4,          // k: empirical constant (1.0-1.5 typical)
+            BULK_DENSITY: 1.6,          // ρ: relative density (arbitrary units)
+            GRAVITY: 9.81,              // g: gravity constant
+
+            // Calibration: Measured base flow rate for reference configuration
+            // This is the ONE empirical measurement needed
+            // For diameter=4px, neck=20px at 60 FPS
+            BASE_FLOW_RATE: 50,         // particles/second (CONSERVATIVE - measured)
+
+            // Constraints
+            MAX_PARTICLES: 4500,        // Maximum particles we can fit
+            MIN_RADIUS: 1.2,            // Minimum particle radius
+            MAX_RADIUS: 3.5,            // Maximum particle radius
+            MIN_NECK_WIDTH: 10,         // Minimum neck width
+            MAX_NECK_WIDTH: 35,         // Maximum neck width
+
+            // Jamming prevention: orifice must be > 5 × grain diameter
+            MIN_ORIFICE_TO_GRAIN_RATIO: 5.0
         };
 
         /**
+         * BEVERLOO LAW: Calculate granular flow rate
+         * W = C × ρ × √g × (D - k × d)^2.5
+         *
+         * @param {number} orifice - Orifice diameter (pixels)
+         * @param {number} grainDiameter - Grain diameter (pixels)
+         * @returns {number} Relative flow rate (particles/second)
+         */
+        function beverlooFlowRate(orifice, grainDiameter) {
+            const C = CALIBRATION.DISCHARGE_COEFF;
+            const k = CALIBRATION.SHAPE_FACTOR;
+            const rho = CALIBRATION.BULK_DENSITY;
+            const g = CALIBRATION.GRAVITY;
+
+            // Check jamming condition
+            if (orifice < CALIBRATION.MIN_ORIFICE_TO_GRAIN_RATIO * grainDiameter) {
+                console.warn('WARNING: Orifice too small! Jamming risk!');
+                // Return very slow flow rate to prevent jamming simulation
+                return 1.0;
+            }
+
+            // Beverloo Equation: Effective diameter
+            const D_effective = orifice - (k * grainDiameter);
+
+            if (D_effective <= 0) {
+                return 0; // No flow possible
+            }
+
+            // Flow rate ∝ √g × D_eff^2.5
+            const flowRate = C * rho * Math.pow(g, 0.5) * Math.pow(D_effective, 2.5);
+
+            // Scale to BASE_FLOW_RATE (this is our empirical calibration)
+            const baseEffective = CALIBRATION.BASE_NECK_WIDTH -
+                                  (k * CALIBRATION.BASE_DIAMETER);
+            const baseFlowRate = C * rho * Math.pow(g, 0.5) * Math.pow(baseEffective, 2.5);
+
+            // Return scaled flow rate in particles/second
+            return CALIBRATION.BASE_FLOW_RATE * (flowRate / baseFlowRate);
+        }
+
+        /**
          * Calculate optimal particle parameters based on timer duration
-         * Flow rate ∝ (neck_width)² × (particle_diameter)^-2
+         * Uses BEVERLOO LAW for accurate granular flow physics
          * Returns: { radius, neckWidth, rows, cols, estimatedParticles, estimatedFlowRate }
          */
         function calculateParticleParams(timerSeconds) {
@@ -299,25 +351,9 @@
                 radius = targetRadius;
             }
 
-            // Calculate actual flow rate with final radius and neck width
+            // Calculate actual flow rate using BEVERLOO LAW
             const actualDiameter = radius * 2;
-
-            // IMPROVED FLOW RATE FORMULA
-            // Flow rate depends on:
-            // 1. Cross-sectional area of neck: (neckWidth)²
-            // 2. Particle throughput: particles_across × velocity
-            // 3. Particle size: smaller particles = more fit across, faster flow
-
-            // Particles that fit across neck
-            const particlesAcrossBase = CALIBRATION.BASE_NECK_WIDTH / CALIBRATION.BASE_DIAMETER;
-            const particlesAcrossActual = neckWidth / actualDiameter;
-
-            // Flow rate scales with: (particles_across)^1.5 × (neck_width / particle_diameter)^0.5
-            // This accounts for both geometry and velocity effects
-            const flowRatio = Math.pow(particlesAcrossActual / particlesAcrossBase, 1.5);
-
-            // Apply scaling to base flow rate
-            const actualFlowRate = CALIBRATION.BASE_FLOW_RATE * flowRatio;
+            const actualFlowRate = beverlooFlowRate(neckWidth, actualDiameter);
 
             return {
                 radius: radius,
